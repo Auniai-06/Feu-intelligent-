@@ -1,0 +1,88 @@
+#include <Adafruit_NeoPixel.h>
+
+#define LED_PIN     4
+#define NUM_LEDS    1   // 1 LED pour indiquer l'état (vert/rouge)
+#define PIR_PIN     A3
+#define BUZZER_PIN  A4
+
+#define FEU_VERT_DURATION     10000  // 10 secondes
+#define FEU_ROUGE_DURATION    10000  // 10 secondes
+#define TEMPS_AVERTISSEMENT    5000  // 5 secondes avant fin du feu vert
+#define DUREE_SON              20000 // Durée d’annonce sonore
+
+Adafruit_NeoPixel leds(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+bool feuVert = false;
+unsigned long feuStartTime = 0;
+unsigned long detectionStartTime = 0;
+bool personneDetectee = false;
+
+void setup() {
+  Serial.begin(115200);
+  leds.begin();
+  leds.show();
+  pinMode(PIR_PIN, INPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  feuStartTime = millis();
+}
+
+void loop() {
+  // Alterner les feux
+  unsigned long currentTime = millis();
+  if (feuVert && currentTime - feuStartTime >= FEU_VERT_DURATION) {
+    feuVert = false;
+    feuStartTime = currentTime;
+    setFeuRouge();
+  } else if (!feuVert && currentTime - feuStartTime >= FEU_ROUGE_DURATION) {
+    feuVert = true;
+    feuStartTime = currentTime;
+    setFeuVert();
+  }
+
+  // Détection PIR
+  if (digitalRead(PIR_PIN) == HIGH) {
+    personneDetectee = true;
+    detectionStartTime = millis();
+  }
+
+  // Si une personne est détectée, émettre un son pendant 20s max
+  if (personneDetectee) {
+    if (millis() - detectionStartTime <= DUREE_SON) {
+      jouerSonSelonFeu(currentTime);
+    } else {
+      personneDetectee = false;
+      noTone(BUZZER_PIN);
+    }
+  } else {
+    noTone(BUZZER_PIN); // couper le son s’il n’y a plus personne
+  }
+
+  delay(100); // évite de surcharger la boucle
+}
+
+void setFeuVert() {
+  leds.setPixelColor(0, leds.Color(0, 150, 0));
+  leds.show();
+  Serial.println("Feu VERT");
+}
+
+void setFeuRouge() {
+  leds.setPixelColor(0, leds.Color(150, 0, 0));
+  leds.show();
+  Serial.println("Feu ROUGE");
+}
+
+void jouerSonSelonFeu(unsigned long currentTime) {
+  if (feuVert) {
+    // Son pour traverser
+    if (currentTime - feuStartTime >= FEU_VERT_DURATION - TEMPS_AVERTISSEMENT) {
+      // Derniers 5s -> avertissement rapide
+      tone(BUZZER_PIN, 1000, 200);
+    } else {
+      tone(BUZZER_PIN, 500, 500);
+    }
+  } else {
+    // Son d'interdiction
+    tone(BUZZER_PIN, 200, 300);
+  }
+}
