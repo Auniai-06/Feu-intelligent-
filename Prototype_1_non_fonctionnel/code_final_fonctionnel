@@ -1,0 +1,163 @@
+#include <Adafruit_NeoPixel.h>
+#include "pitches.h"
+
+// ----- CONFIG ----- //
+#define LED_PIN         4    // NeoPixel feu tricolore
+#define NUM_LEDS        1
+#define PIR_POWER_PIN   A2   // Alimentation PIR (sortie)
+#define PIR_SIGNAL_PIN  A3   // Signal PIR
+#define BUZZER_PIN      A0
+
+#define FEU_VERT_DURATION     10000
+#define FEU_ROUGE_DURATION    10000
+#define TEMPS_AVERTISSEMENT   5000
+#define DUREE_SON             20000
+
+Adafruit_NeoPixel leds(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+// ---- Variables de gestion ---- //
+bool feuVert = false;
+unsigned long feuStartTime = 0;
+unsigned long detectionStartTime = 0;
+bool personneDetectee = false;
+
+// ---- Mélodie feu vert ----
+int melodyVert[] = { 
+  NOTE_A7, 0, NOTE_A7, 0, NOTE_A7, 0
+};
+int noteDurationsVert[] = { 4, 2, 4, 2, 4, 2 };
+const int melodyVertLength = sizeof(melodyVert) / sizeof(melodyVert[0]);
+
+// ---- Mélodie feu rouge ----
+int melodyRouge[] = {
+  NOTE_C5, NOTE_B4, 0, NOTE_C5, NOTE_B4, 0, NOTE_C5, NOTE_B4, 0
+};
+int noteDurationsRouge[] = { 4, 2, 2, 4, 2, 2, 4, 2, 2 };
+const int melodyRougeLength = sizeof(melodyRouge) / sizeof(melodyRouge[0]);
+
+// ---- Gestion note en cours ----
+int currentNote = 0;
+unsigned long noteStartTime = 0;
+int currentNoteDuration = 0;
+
+// ---- Setup ----
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(PIR_POWER_PIN, OUTPUT);
+  pinMode(PIR_SIGNAL_PIN, INPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+
+  digitalWrite(PIR_POWER_PIN, HIGH); // Alimente le PIR
+
+  leds.begin();
+  leds.show();
+
+  feuVert = false;
+  feuStartTime = millis();
+  setFeuRouge();
+}
+
+// ---- Loop ----
+void loop() {
+  unsigned long currentTime = millis();
+
+  // --- Gestion feu tricolore ---
+  if (feuVert && (currentTime - feuStartTime >= FEU_VERT_DURATION)) {
+    feuVert = false;
+    feuStartTime = currentTime;
+    setFeuRouge();
+  }
+  else if (!feuVert && (currentTime - feuStartTime >= FEU_ROUGE_DURATION)) {
+    feuVert = true;
+    feuStartTime = currentTime;
+    setFeuVert();
+  }
+
+  // --- Lecture PIR ---
+  bool pirDetected = (digitalRead(PIR_SIGNAL_PIN) == HIGH);
+  if (pirDetected) {
+    if (!personneDetectee) {
+      personneDetectee = true;
+      detectionStartTime = currentTime;
+      currentNote = 0;
+      noteStartTime = 0;
+    }
+  }
+
+  // --- Affichage LED ---
+  if (feuVert) {
+    setFeuVert();
+  } else {
+    setFeuRouge();
+  }
+
+  // --- Gestion son si personne détectée ---
+  if (personneDetectee) {
+    if (currentTime - detectionStartTime <= DUREE_SON) {
+      jouerMelodieNonBloquante(currentTime);
+    } else {
+      personneDetectee = false;
+      noTone(BUZZER_PIN);
+    }
+  } else {
+    noTone(BUZZER_PIN);
+  }
+}
+
+// --- Fonctions pour feu ---
+void setFeuVert() {
+  leds.setPixelColor(0, leds.Color(0, 150, 0)); // Vert
+  leds.show();
+  Serial.println("Feu VERT");
+}
+
+void setFeuRouge() {
+  leds.setPixelColor(0, leds.Color(150, 0, 0)); // Rouge
+  leds.show();
+  Serial.println("Feu ROUGE");
+}
+
+// --- Jouer la mélodie sans bloquer ---
+void jouerMelodieNonBloquante(unsigned long currentTime) {
+  int* melody;
+  int* durations;
+  int length;
+
+  if (feuVert) {
+    melody = melodyVert;
+    durations = noteDurationsVert;
+    length = melodyVertLength;
+  } else {
+    melody = melodyRouge;
+    durations = noteDurationsRouge;
+    length = melodyRougeLength;
+  }
+
+  if (currentNote >= length) {
+    currentNote = 0;
+  }
+
+  if (noteStartTime == 0) {
+    currentNoteDuration = 1000 / durations[currentNote];
+    if (melody[currentNote] != 0) {
+      tone(BUZZER_PIN, melody[currentNote], currentNoteDuration);
+    }
+    noteStartTime = currentTime;
+  } else {
+    if (currentTime - noteStartTime >= currentNoteDuration * 1.3) {
+      noTone(BUZZER_PIN);
+      currentNote++;
+      if (currentNote < length) {
+        currentNoteDuration = 1000 / durations[currentNote];
+        if (melody[currentNote] != 0) {
+          tone(BUZZER_PIN, melody[currentNote], currentNoteDuration);
+        }
+        noteStartTime = currentTime;
+      } else {
+        currentNote = 0;
+        noteStartTime = 0;
+      }
+    }
+  }
+}
