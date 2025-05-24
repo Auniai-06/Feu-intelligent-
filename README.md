@@ -19,9 +19,6 @@ Ce projet Arduino simule un feu de signalisation intelligent pour aider les pers
 - Résistance (si besoin)
 - Alimentation 5V
 
-##  Schéma de câblage
-Voir le fichier `doc/schema_cablage.jpg`.
-
 ##  Installation
 1. Charger le code `feu_pieton.ino` sur votre carte Arduino.
 2. Placer le fichier `pitches.h` dans le même dossier.
